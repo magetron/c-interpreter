@@ -10,4 +10,11 @@ It's called Patrick's C compiler -> pcc.
 
 * `hello.c` - A piece of testing C code that outputs `Hello World!\n`
 
+## Usage
+
+`gcc -m32 pcc.c -o pcc`
+
+`-m32` tag is used for `64-bit` machines.
+
+`./pcc hello.c`
 
