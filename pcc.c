@@ -125,7 +125,41 @@ int eval () {
 				bp = pc = (int *)*sp++;
 			case LEA :
 				ax = (int)(bp + *pc++);
-				
+
+			// Operator Instructions
+			// These are built-in basic operations. 
+			case OR :
+				ax = *sp++ | ax;
+			case XOR :
+				ax = *sp++ ^ ax;
+			case AND :
+				ax = *sp++ & ax;
+			case EQ :
+				ax = *sp++ == ax;
+			case NE :
+				ax = *sp++ != ax;
+			case LT :
+				ax = *sp++ < ax;
+			case LE :
+				ax = *sp++ <= ax;
+			case GT :
+				ax = *sp++ > ax;
+			case GE :
+				ax = *sp++ >= ax;
+			case SHL :
+				ax = *sp++ << ax;
+			case SHR :
+				ax = *sp++ >> ax;
+			case ADD :
+				ax = *sp++ + ax;
+			case SUB :
+				ax = *sp++ - ax;
+			case MUL :
+				ax = *sp++ * ax;
+			case DIV :
+				ax = *sp++ / ax;
+			case MOD :
+				ax = *sp++ % ax;				
 
 		}
 	}
