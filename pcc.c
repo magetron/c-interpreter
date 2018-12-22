@@ -43,6 +43,8 @@ int eval () {
 	int op, *tmp;
 	while (1) {
 		switch (op) {
+			// Operations / Instructions
+
 			// MOV
 			// MOV dest, source (basically moving the stuff in source to destination, could be anything)
 			// In pcc, we split MOV into 5 commands which only takes in at most 1 argument
@@ -160,7 +162,34 @@ int eval () {
 				ax = *sp++ / ax;
 			case MOD :
 				ax = *sp++ % ax;				
-
+			
+			// System Commands
+			// These commands including open and closing files, IO from console, memory allocation and etc.
+			// These commands requires extensive knowledge to implement, such that we will simply use built-in functions provided.
+			case EXIT :
+				printf("EXIT : %d\n", *sp);
+				return *sp;
+			case OPEN :
+				ax = open( (char *)sp[1], sp[0]); 
+			case CLOS :
+				ax = close(*sp);
+			case READ :
+				ax = read(sp[2], (char *)sp[1], *sp);
+			case PRTF :
+				tmp = sp + pc[1];
+				ax = printf( (char *)tmp[-1], tmp[-2], tmp[-3], tmp[-4], tmp[-5], tmp[-6]);
+			case MALC :
+				ax = (int)malloc(*sp);
+			case MSET :
+				ax = (int)memset( (char *)sp[2], sp[1], *sp);
+			case MCMP :
+				ax = memcmp( (char *)sp[2], (char *)sp[1], *sp);
+			
+			// ERROR fallback
+			// If op doesn't belong to any of the above instructions, there must be something wrong, therefore we exit the VM.
+			default :
+				printf("ERROR : unknown instruction %d\n", op);
+				return -1;
 		}
 	}
 	return 0;
