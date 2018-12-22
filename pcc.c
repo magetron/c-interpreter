@@ -44,8 +44,7 @@ int eval () {
 	while (1) {
 		// Get next command
 		op = *pc++;
-
-
+            
 		switch (op) {
 			// Operations / Instructions
 
@@ -59,24 +58,30 @@ int eval () {
 			// SI : Save Integer from ax addr to Stack Top addr
 			case IMM :
 				ax = *pc++;			//load immediate value to ax
+				break;
 			case LC :
 				ax = *(char *)ax;		//load char to ax addr;
+				break;
 			case LI :
 				ax = *(int *)ax;		//load int to ax addr;
+				break;
 			case SC :
-				ax = *(char *)*sp++ = ax;	//save char to stack top addr
+				*(char *)*sp++ = ax;		//save char to stack top addr
+				break;
 			case SI :
-				ax = *(int *)*sp++ = ax;	//save int to stack top addr
-
-			// PUSH
+				*(int *)*sp++ = ax;		//save int to stack top addr
+				break;
+			
+				// PUSH
 			// PUSH : push the value of ax to the stack
 			case PUSH :
 				*--sp = ax;
-
+				break;
 			// JMP
 			// JMP <addr> : set program counter to the new <addr>
 			case JMP :
 				pc = (int *)*pc;		//pc is storing the next command, which is the new <addr> we want to JMP to.
+				break;
 
 			// JZ / JNZ
 			// if statement is implement using JZ and JNZ (jump when is zero, jump when is not zero)
@@ -84,8 +89,10 @@ int eval () {
 			// JNZ : jump when ax is not zero
 			case JZ :
 				pc = ax ? pc + 1 : (int *)*pc;
+				break;
 			case JNZ :
 				pc = ax ? (int *)*pc : pc + 1;
+				break;
 
 			// Subroutine
 			// CALL <addr> : call subroutine at <addr>. Note this is different from JMP since we need to store the current pc for future coming back to.
@@ -117,6 +124,8 @@ int eval () {
 			case CALL :
 				*--sp = (int)(pc + 1);
 				pc = (int *)*pc;
+				break;
+
 			//case RET :
 			//	pc = (int *)*sp++;
 			// Above is an ideal RET function. In pcc, we use LEV to replace RET since we need to consider the return value of subroutines.
@@ -124,48 +133,37 @@ int eval () {
 				*--sp = (int)bp;
 				bp = sp;
 				sp = sp - *pc++;
+				break;
 			case ADJ :
 				sp = sp + *pc++;
+				break;
 			case LEV :
 				sp = bp;
-				bp = pc = (int *)*sp++;
+				bp = (int *)*sp++; 
+				pc = (int *)*sp++;
+				break;
 			case LEA :
 				ax = (int)(bp + *pc++);
+				break;
 
 			// Operator Instructions
 			// These are built-in basic operations. 
-			case OR :
-				ax = *sp++ | ax;
-			case XOR :
-				ax = *sp++ ^ ax;
-			case AND :
-				ax = *sp++ & ax;
-			case EQ :
-				ax = *sp++ == ax;
-			case NE :
-				ax = *sp++ != ax;
-			case LT :
-				ax = *sp++ < ax;
-			case LE :
-				ax = *sp++ <= ax;
-			case GT :
-				ax = *sp++ > ax;
-			case GE :
-				ax = *sp++ >= ax;
-			case SHL :
-				ax = *sp++ << ax;
-			case SHR :
-				ax = *sp++ >> ax;
-			case ADD :
-				ax = *sp++ + ax;
-			case SUB :
-				ax = *sp++ - ax;
-			case MUL :
-				ax = *sp++ * ax;
-			case DIV :
-				ax = *sp++ / ax;
-			case MOD :
-				ax = *sp++ % ax;				
+			case OR : 	ax = *sp++ | ax; 	break;
+			case XOR : 	ax = *sp++ ^ ax; 	break;
+			case AND : 	ax = *sp++ & ax; 	break;
+			case EQ : 	ax = *sp++ == ax;	break;
+			case NE :	ax = *sp++ != ax;	break;
+			case LT :	ax = *sp++ < ax;	break;
+			case LE :	ax = *sp++ <= ax;	break;
+			case GT :	ax = *sp++ > ax;	break;
+			case GE :	ax = *sp++ >= ax;	break;
+			case SHL :	ax = *sp++ << ax;	break;
+			case SHR :	ax = *sp++ >> ax;	break;
+			case ADD :	ax = *sp++ + ax;	break;
+			case SUB :	ax = *sp++ - ax;	break;
+			case MUL :	ax = *sp++ * ax;	break;
+			case DIV :	ax = *sp++ / ax;	break;
+			case MOD :	ax = *sp++ % ax;	break;				
 			
 			// System Commands
 			// These commands including open and closing files, IO from console, memory allocation and etc.
@@ -173,27 +171,36 @@ int eval () {
 			case EXIT :
 				printf("EXIT : %d\n", *sp);
 				return *sp;
+				break;
 			case OPEN :
-				ax = open( (char *)sp[1], sp[0]); 
+				ax = open( (char *)sp[1], sp[0]);
+				break;
 			case CLOS :
 				ax = close(*sp);
+				break;
 			case READ :
 				ax = read(sp[2], (char *)sp[1], *sp);
+				break;
 			case PRTF :
 				tmp = sp + pc[1];
 				ax = printf( (char *)tmp[-1], tmp[-2], tmp[-3], tmp[-4], tmp[-5], tmp[-6]);
+				break;
 			case MALC :
 				ax = (int)malloc(*sp);
+				break;
 			case MSET :
 				ax = (int)memset( (char *)sp[2], sp[1], *sp);
+				break;
 			case MCMP :
 				ax = memcmp( (char *)sp[2], (char *)sp[1], *sp);
+				break;
 			
 			// ERROR fallback
 			// If op doesn't belong to any of the above instructions, there must be something wrong, therefore we exit the VM.
 			default :
 				printf("ERROR : unknown instruction %d\n", op);
 				return -1;
+				break;
 		}
 	}
 	return 0;
@@ -274,8 +281,7 @@ int main (int argc, char **argv) {
 	
 	bp = sp = (int *)( (int)stack + poolsize );
 	ax = 0;
-
-
+	
 	program();
 	return eval();
 }
