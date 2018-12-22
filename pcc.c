@@ -15,14 +15,93 @@ char *data;			// data segment
 int *pc, *bp, *sp, ax, cycle; 	// VM registers, program counter, base pointer, stack pointer (from high addr -> low addr), general-purpose registers (GPRs)
 
 // Instructions supported (intel x86-based)
-enum { LEA, IMM, JMP, CALL, JZ, JNZ, ENT, ADJ, LEV, LI, LC, SI, SC, PUSH, 
+enum { 
+	LEA, IMM, JMP, CALL, JZ, JNZ, ENT, ADJ, LEV, LI, LC, SI, SC, PUSH, 
 	OR, XOR, AND, EQ, NE, LT, GT, LE, GE, SHL, SHR, ADD, SUB, MUL, DIV, MOD,
-	OPEN, READ, CLOS, PRTF, MALC, MSET, MCMP, EXIT };
+	OPEN, READ, CLOS, PRTF, MALC, MSET, MCMP, EXIT 
+};
+
+// Tokens and classes supported (last operator has the highest precedence)
+// (e.g. = -> Assign, == -> Eq, != -> Ne)
+enum {
+	Num = 128, Fun, Sys, Glo, Loc, Id,
+	Char, Else, Enum, If, Int, Return, Sizeof, While,
+	Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
+};
+
+// Identifier
+// It's basically a list of keywords / stuff we have at the moment, each of them is called an identifier for a variable / a keyword / a number.
+//
+// 			 Symbol table:
+// ----+-----+----+----+----+-----+-----+-----+------+------+----
+//  .. |Token|Hash|Name|Type|Class|Value|BType|BClass|BValue| ..
+// ----+-----+----+----+----+-----+-----+-----+------+------+----
+//     |<---            one single identifier           --->|
+// 
+// Token : the return mark of an identifer, we also include keywords if, while and etc. and give them a unique token
+// Hash : the hash of an identifier used for comparision of identifiers
+// Name : string of the name of the identifier
+// Class : the class of identifier, (e.g. Local / Global / Number)
+// Type : the type of identifier (Int, Char, Pointer ...)
+// Value : the value of the identifer, if the identifier is a function, value is the address of the function
+// BType / BClass / BValue : when a local identifier is identical with a global identifer, put global identifier in BType / BClass / BValue.
 
 
+int token_val; 			// value of current token
+int *curent_id, *symbols;	// current parsed ID, the Symbol Table above
 
+// Since we don't support struct, we use enum as an array instead.
+enum {Token, Hash, Name, Type, Class, Value, BType, BClass, BValue, IdSize};
+
+
+// Lexical Analyser
 void next () {
-	token = *src++;
+	char *last_pos;
+	int hash;
+	
+	while (token = *src) {
+	// We have 2 options when encourted unknown char
+	// 1. Point out the ERROR and Quit the whole interpreter
+	// 2. Point out the ERROR and Go on
+	// In pcc, we chose 2. The while loop skips unknown char as well as whitespaces.
+		*src++;
+		if 	(token == '\n') 	line++;
+		else if (token == '#')
+				// pcc does not support macros at this stage
+				while ( (*src != 0) && (*src !='\n') src++;
+
+		// Identifier	
+		else if ( (token >= 'a' && token <= 'z') || (token >= 'A' && token <= 'Z') || (token == '_')) {
+			
+			// parse identifier
+			last_pos = src - 1;
+			hash = token;
+			while ( (*src >= 'a' && src <= 'z') || (*src >= 'A' && *src <= 'Z') || (*src >= '0' && *src <= '9') || (*src == '_')) {
+				hash = hash * 147 + *src;
+				src++;
+			}
+			
+			// search for identifer to see if there is already one
+			// The following is a linear search, could be optimised
+			current_id = symbols;
+			while (current_id[Token]) {
+				if ( (current_id[Hash] == hash) && (!memcmp( (char *)current_id[Name], last_pos, src - last_pos) ) {
+					// there is one exsisting identifier already
+					token = current_id[Token];
+					return;
+				}
+				// Otherwise go on with the search
+				current_id = current_id + IdSize;
+			}
+
+			// Not found, store a new id
+			current_id[Name] = (int)last_pos;
+			current_id[Hash] = hash;
+			token = current_id[Token] = Id;
+			return;
+		}
+	
+	}
 	return;
 }
 
