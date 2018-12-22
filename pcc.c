@@ -42,6 +42,10 @@ void program () {
 int eval () {
 	int op, *tmp;
 	while (1) {
+		// Get next command
+		op = *pc++;
+
+
 		switch (op) {
 			// Operations / Instructions
 
@@ -270,8 +274,6 @@ int main (int argc, char **argv) {
 	
 	bp = sp = (int *)( (int)stack + poolsize );
 	ax = 0;
-
-
 
 
 	program();
