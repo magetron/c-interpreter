@@ -2,6 +2,7 @@
 #include "stdlib.h"
 #include "memory.h"
 #include "string.h"
+#define DEBUG 1
 
 int token; 			// current token
 char *src, *old_src;		// pointer to src string
@@ -41,10 +42,22 @@ void program () {
 
 int eval () {
 	int op, *tmp;
+	cycle = 0;
+
 	while (1) {
 		// Get next command
+		cycle++;
 		op = *pc++;
-            
+            	
+		if (DEBUG) {
+			printf("cycle %d > %.4s", cycle,
+					& 	"LEA ,IMM ,JMP ,CALL,JZ  ,JNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PUSH,"
+						"OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL  SHR  ADD ,SUB ,MUL ,DIV ,MOD ,"
+						"OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT"[op * 5]);
+			if (op <= ADJ) printf(" pc = %d\n", *pc);
+			else printf("\n");
+		}
+
 		switch (op) {
 			// Operations / Instructions
 
