@@ -53,6 +53,18 @@ int *current_id, *symbols;	// current parsed ID, the Symbol Table above
 // Since we don't support struct, we use enum as an array instead.
 enum {Token, Hash, Name, Type, Class, Value, BType, BClass, BValue, IdSize};
 
+// Keywords
+// Keywords like if, while, else, return are not normal identifiers, they have certain meanings.
+// There are 2 options:
+// 1. We resolve them in Lexical Analyser
+// 2. We predefine a symbol table with keywords and essential information of what they do.
+// In pcc, we use option 2.
+
+int *idmain;
+
+// types of variable / function supported
+enum { CHAR, INT, PTR };
+
 
 // Lexical Analyser
 void next () {
@@ -100,8 +112,188 @@ void next () {
 			token = current_id[Token] = Id;
 			return;
 		}
-			
+
+		// Number
+		else if (token >= '0' && token <= '9') {
+			// parse number
+			// There are 3 types of number supported in pcc : dec(123), hex(0x123), oct(01237)
+			// Like in C99, decimal number 123 should not be written as 0123 <- which will be taken as a oct
+			token_val = token - '0';
+			if (token_val > 0) 
+				// dec
+				while (*src >= '0' && *src <= '9') token_val = token_val * 10 + *src++ - '0';
+			else {
+				if (*src == 'x' || *src == 'X') {
+					// hex
+					token = *++src;
+					while ( (token >= '0' && token <= '9') || (token >= 'a' && token <= 'f') || (token >= 'A' && token <= 'F' )) {
+						token_val = token_val * 16 + (token & 15) + (token >= 'A' ? 9 : 0);
+						// In ASCII, a has hex value of 61, A has hex value of 41. Therefore, token & 15 gives us the value of the last digit.
+						// This is written in a quite hacky way. However, you can rewrite this bit with if statements.
+						token = *++src;
+					}
+				} else 
+					// oct
+					while (*src >= '0' && *src <= '7') token_val = token_val * 8 + *src++ - '0';
+			}
+		}
 		
+		// String
+		// When encountering a string, we place it in data and returns the address of data. 
+		// Also, pcc supports \n and \a, which is also dealt with as a string.
+		else if (token == '"' || token == '\'') {
+			last_pos = data;
+			while ( (*src != 0) && (*src != token) ) {
+				token_val = *src++;
+				// deal with \n characters
+				if (token_val == '\\') {
+					token_val = *src++;
+					if (token_val == 'n') token_val = '\n';
+				}
+				if (token == '"') *data++ = token_val;
+			}
+
+			src++;
+
+			// if it is a single character, take it as char, return a number token
+			if (token == '"') token_val = (int)last_pos;
+			else token = Num;
+
+			return;
+		}
+
+		// Comments
+		// pcc only support // comments
+		else if (token == '/') {
+			if (*src == '/')
+				// skipping whole commented line
+				while ( (*src != 0) && (*src != '\n') ) src++;
+			else {
+				// its division
+				token = Div;
+				return;
+			}
+		}
+		
+		// =
+		// = Assign
+		// == Equal to
+		else if (token == '=') {
+			if (*src == '=') {
+				src++;
+				token = Eq;
+			} else token = Assign;
+			return;
+		}
+		
+		// +
+		// ++ Increase by 1
+		// + Add
+		else if (token == '+') {
+			if (*src == '+') {
+				src++;
+				token = Inc;
+			} else token = Add;
+			return;
+		}
+		
+		// -
+		// -- Decrease by 1
+		// - Substraction
+		else if (token == '-') {
+			if (*src == '-') {
+				src++;
+				token = Dec;
+			} else token = Sub;
+			return;
+		}
+
+		// !
+		// != Not Equal
+		else if (token == '!') {
+			if (*src == '=') {
+				src++;
+				token = Ne;
+			}
+			return;
+		}
+		
+		// <
+		// <= Less than or Equal
+		// << Left Shift
+		// < Less than
+		else if (token == '<') {
+			if (*src == '=') {
+				src++;
+				token = Le;
+			} else if (*src == '<') {
+				src++;
+				token = Shl;
+			} else token = Lt;
+			return;
+		}
+
+		// >
+		// >= Greater than or Equal
+		// >> Right Shift
+		// > Greater than
+		else if (token == '>') {
+			if (*src == '=') {
+				src++;
+				token = Ge;
+			} else if (*src == '>') {
+				src++;
+				token = Shr;
+			} else token = Gt;
+			return;
+		}
+		
+		// |
+		// |  binary or
+		// || logic or
+		else if (token == '|') {
+			if (*src == '|') {
+				src++;
+				token = Lor;
+			} else token = Or;
+			return;
+		}
+
+		// &
+		// &  binary and
+		// && logic and
+		else if (token == '&') {
+			if (*src == '&') {
+				src++;
+				token = Lan;
+			} else token = And;
+			return;
+		}
+
+		else if (token == '^') {
+			token = Xor;
+			return;
+		}
+		else if (token == '%') {
+			token = Mod;
+			return;
+		}
+		else if (token == '*') {
+			token = Mul;
+			return;
+		}
+		else if (token == '[') {
+			token = Brak;
+			return;
+		}
+		else if (token == '?') {
+			token = Cond;
+			return;
+		}
+		else if (token == '~' || token == ';' || token == '{' || token == '}' || token == '(' || token == ')' || token == ']' || token == ',' || token == ':') 
+			//token is what it is now
+			return;
+
 	}
 	return;
 }
@@ -150,24 +342,23 @@ int eval () {
 			// SC : Save Char from ax addr to Stack Top addr
 			// SI : Save Integer from ax addr to Stack Top addr
 			
-			/*
-			case IMM :
-				ax = *pc++;			//load immediate value to ax
-				break;
-			case LC :
-				ax = *(char *)ax;		//load char to ax addr;
-				break;
-			case LI :
-				ax = *(int *)ax;		//load int to ax addr;
-				break;
-			case SC :
-				ax = *(char *)*sp++ = ax;	//save char to stack top addr
-				break;
-			case SI :
-				*(int *)*sp++ = ax;		//save int to stack top addr
-				break;
 			
-			*/
+			//case IMM :
+			//	ax = *pc++;			//load immediate value to ax
+			//	break;
+			//case LC :
+			//	ax = *(char *)ax;		//load char to ax addr;
+			//	break;
+			//case LI :
+			//	ax = *(int *)ax;		//load int to ax addr;
+			//	break;
+			//case SC :
+			//	ax = *(char *)*sp++ = ax;	//save char to stack top addr
+			//	break;
+			//case SI :
+			//	*(int *)*sp++ = ax;		//save int to stack top addr
+			//	break;
+			
 			
 			if 	(op == IMM)	{ ax = *pc++; }
 			else if (op == LC)	{ ax = *(char *)ax; }
@@ -179,21 +370,21 @@ int eval () {
 			// PUSH
 			// PUSH : push the value of ax to the stack
 			
-			/*
-			case PUSH :
-				*--sp = ax;
-				break;
-			*/
+			
+			//case PUSH :
+			//	*--sp = ax;
+			//	break;
+			
 			else if (op == PUSH)	{ *--sp = ax; }
 
 			// JMP
 			// JMP <addr> : set program counter to the new <addr>
 			
-			/*
-			case JMP :
-				pc = (int *)*pc;		//pc is storing the next command, which is the new <addr> we want to JMP to.
-				break;
-			*/
+			
+			//case JMP :
+			//	pc = (int *)*pc;		//pc is storing the next command, which is the new <addr> we want to JMP to.
+			//	break;
+			
 			else if (op == JMP)	{ pc = (int *)*pc; }
 			
 			// JZ / JNZ
@@ -201,14 +392,14 @@ int eval () {
 			// JZ : jump when ax is zero
 			// JNZ : jump when ax is not zero
 			 
-			/*
-			case JZ :
-				pc = ax ? pc + 1 : (int *)*pc;
-				break;
-			case JNZ :
-				pc = ax ? (int *)*pc : pc + 1;
-				break;
-			*/
+			
+			//case JZ :
+			//	pc = ax ? pc + 1 : (int *)*pc;
+			//	break;
+			//case JNZ :
+			//	pc = ax ? (int *)*pc : pc + 1;
+			//	break;
+			
 			else if (op == JZ)	{ pc = ax ? pc + 1 : (int *)*pc; }
 			else if (op == JNZ)	{ pc = ax ? (int *)*pc : pc + 1; }
 
@@ -239,32 +430,32 @@ int eval () {
 			// +---------------+
 			// |    ....       |  low address
 			
-			/*
-			case CALL :
-				*--sp = (int)(pc + 1);
-				pc = (int *)*pc;
-				break;
+			
+			//case CALL :
+			//	*--sp = (int)(pc + 1);
+			//	pc = (int *)*pc;
+			//	break;
 
-			//case RET :
+			////case RET :
+			////	pc = (int *)*sp++;
+			//// Above is an ideal RET function. In pcc, we use LEV to replace RET since we need to consider the return value of subroutines.
+			//case ENT :
+			//	*--sp = (int)bp;
+			//	bp = sp;
+			//	sp = sp - *pc++;
+			//	break;
+			//case ADJ :
+			//	sp = sp + *pc++;
+			//	break;
+			//case LEV :
+			//	sp = bp;
+			//	bp = (int *)*sp++; 
 			//	pc = (int *)*sp++;
-			// Above is an ideal RET function. In pcc, we use LEV to replace RET since we need to consider the return value of subroutines.
-			case ENT :
-				*--sp = (int)bp;
-				bp = sp;
-				sp = sp - *pc++;
-				break;
-			case ADJ :
-				sp = sp + *pc++;
-				break;
-			case LEV :
-				sp = bp;
-				bp = (int *)*sp++; 
-				pc = (int *)*sp++;
-				break;
-			case LEA :
-				ax = (int)(bp + *pc++);
-				break;
-			*/
+			//	break;
+			//case LEA :
+			//	ax = (int)(bp + *pc++);
+			//	break;
+			//
 			
 			else if (op == CALL)	{ *--sp = (int)(pc + 1); pc = (int *)*pc; }
 			else if (op == ENT)	{ *--sp = (int)bp; bp = sp; sp = sp - *pc++; }
@@ -275,24 +466,22 @@ int eval () {
 			// Operator Instructions
 			// These are built-in basic operations. 
 			
-			/*
-			case OR : 	ax = *sp++ | ax; 	break;
-			case XOR : 	ax = *sp++ ^ ax; 	break;
-			case AND : 	ax = *sp++ & ax; 	break;
-			case EQ : 	ax = *sp++ == ax;	break;
-			case NE :	ax = *sp++ != ax;	break;
-			case LT :	ax = *sp++ < ax;	break;
-			case LE :	ax = *sp++ <= ax;	break;
-			case GT :	ax = *sp++ > ax;	break;
-			case GE :	ax = *sp++ >= ax;	break;
-			case SHL :	ax = *sp++ << ax;	break;
-			case SHR :	ax = *sp++ >> ax;	break;
-			case ADD :	ax = *sp++ + ax;	break;
-			case SUB :	ax = *sp++ - ax;	break;
-			case MUL :	ax = *sp++ * ax;	break;
-			case DIV :	ax = *sp++ / ax;	break;
-			case MOD :	ax = *sp++ % ax;	break;	
-			*/
+			//case OR : 	ax = *sp++ | ax; 	break;
+			//case XOR : 	ax = *sp++ ^ ax; 	break;
+			//case AND : 	ax = *sp++ & ax; 	break;
+			//case EQ : 	ax = *sp++ == ax;	break;
+			//case NE :	ax = *sp++ != ax;	break;
+			//case LT :	ax = *sp++ < ax;	break;
+			//case LE :	ax = *sp++ <= ax;	break;
+			//case GT :	ax = *sp++ > ax;	break;
+			//case GE :	ax = *sp++ >= ax;	break;
+			//case SHL :	ax = *sp++ << ax;	break;
+			//case SHR :	ax = *sp++ >> ax;	break;
+			//case ADD :	ax = *sp++ + ax;	break;
+			//case SUB :	ax = *sp++ - ax;	break;
+			//case MUL :	ax = *sp++ * ax;	break;
+			//case DIV :	ax = *sp++ / ax;	break;
+			//case MOD :	ax = *sp++ % ax;	break;	
 
 			else if (op == OR)	{ ax = *sp++ | ax; }
 			else if (op == XOR)	{ ax = *sp++ ^ ax; }
@@ -315,35 +504,33 @@ int eval () {
 			// These commands including open and closing files, IO from console, memory allocation and etc.
 			// These commands requires extensive knowledge to implement, such that we will simply use built-in functions provided.
 			
-			/*
-			case EXIT :
-				printf("EXIT : %d\n", *sp);
-				return *sp;
-				break;
-			case OPEN :
-				ax = open( (char *)sp[1], sp[0]);
-				break;
-			case CLOS :
-				ax = close(*sp);
-				break;
-			case READ :
-				ax = read(sp[2], (char *)sp[1], *sp);
-				break;
-			case PRTF :
-				tmp = sp + pc[1];
-				ax = printf( (char *)tmp[-1], tmp[-2], tmp[-3], tmp[-4], tmp[-5], tmp[-6]);
-				break;
-			case MALC :
-				ax = (int)malloc(*sp);
-				break;
-			case MSET :
-				ax = (int)memset( (char *)sp[2], sp[1], *sp);
-				break;
-			case MCMP :
-				ax = memcmp( (char *)sp[2], (char *)sp[1], *sp);
-				break;
-			*/
-			
+			//case EXIT :
+			//	printf("EXIT : %d\n", *sp);
+			//	return *sp;
+			//	break;
+			//case OPEN :
+			//	ax = open( (char *)sp[1], sp[0]);
+			//	break;
+			//case CLOS :
+			//	ax = close(*sp);
+			//	break;
+			//case READ :
+			//	ax = read(sp[2], (char *)sp[1], *sp);
+			//	break;
+			//case PRTF :
+			//	tmp = sp + pc[1];
+			//	ax = printf( (char *)tmp[-1], tmp[-2], tmp[-3], tmp[-4], tmp[-5], tmp[-6]);
+			//	break;
+			//case MALC :
+			//	ax = (int)malloc(*sp);
+			//	break;
+			//case MSET :
+			//	ax = (int)memset( (char *)sp[2], sp[1], *sp);
+			//	break;
+			//case MCMP :
+			//	ax = memcmp( (char *)sp[2], (char *)sp[1], *sp);
+			//	break;
+						
 			else if (op == EXIT)	{ printf("EXIT : %d\n", *sp); return *sp; }
 			else if (op == OPEN)	{ ax = open( (char *)sp[1], sp[0]); }
 			
@@ -357,12 +544,12 @@ int eval () {
 			// ERROR fallback
 			// If op doesn't belong to any of the above instructions, there must be something wrong, therefore we exit the VM.
 			
-			/*
-			default :
-				printf("ERROR : unknown instruction %d\n", op);
-				return -1;
-				break;
-			*/
+			
+			//default :
+			//	printf("ERROR : unknown instruction %d\n", op);
+			//	return -1;
+			//	break;
+			
 			else {
 				printf("ERROR : unknown instruction %d\n", op);
 				return -1;
@@ -447,6 +634,30 @@ int main (int argc, char **argv) {
 	bp = sp = (int *)( (int)stack + poolsize );
 	ax = 0;
 	
+
+	src = "char else enum if int return sizeof while "
+	      "open read close printf malloc memset memcmp exit void main";
+
+	// add keywords to symbol table
+	i = Char;
+	while (i <= While) {
+		next();
+		current_id[Token] = i++;
+	}
+
+	// add Class / Type / Value to symbol table
+	i = OPEN;
+	while (i <= EXIT) {
+		next();
+		current_id[Class] = Sys;
+		current_id[Type] = INT;
+		current_id[Value] = i++;
+	}
+
+	next(); current_id[Token] = Char; // if void, pcc handle it as null char
+	next(); idmain = current_id; // keep track of the main function
+
+
 	program();
 	return eval();
 }
