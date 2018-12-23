@@ -48,7 +48,7 @@ enum {
 
 
 int token_val; 			// value of current token
-int *curent_id, *symbols;	// current parsed ID, the Symbol Table above
+int *current_id, *symbols;	// current parsed ID, the Symbol Table above
 
 // Since we don't support struct, we use enum as an array instead.
 enum {Token, Hash, Name, Type, Class, Value, BType, BClass, BValue, IdSize};
@@ -59,7 +59,7 @@ void next () {
 	char *last_pos;
 	int hash;
 	
-	while (token = *src) {
+	while ( (token = *src) ) {
 	// We have 2 options when encourted unknown char
 	// 1. Point out the ERROR and Quit the whole interpreter
 	// 2. Point out the ERROR and Go on
@@ -68,7 +68,7 @@ void next () {
 		if 	(token == '\n') 	line++;
 		else if (token == '#')
 				// pcc does not support macros at this stage
-				while ( (*src != 0) && (*src !='\n') src++;
+				while ( (*src != 0) && (*src !='\n') ) src++;
 
 		// Identifier	
 		else if ( (token >= 'a' && token <= 'z') || (token >= 'A' && token <= 'Z') || (token == '_')) {
@@ -85,7 +85,7 @@ void next () {
 			// The following is a linear search, could be optimised
 			current_id = symbols;
 			while (current_id[Token]) {
-				if ( (current_id[Hash] == hash) && (!memcmp( (char *)current_id[Name], last_pos, src - last_pos) ) {
+				if ( (current_id[Hash] == hash) && (!memcmp( (char *)current_id[Name], last_pos, src - last_pos) ) ) {
 					// there is one exsisting identifier already
 					token = current_id[Token];
 					return;
@@ -100,7 +100,8 @@ void next () {
 			token = current_id[Token] = Id;
 			return;
 		}
-	
+			
+		
 	}
 	return;
 }
@@ -137,7 +138,7 @@ int eval () {
 			else printf("\n");
 		}
 
-		switch (op) {
+		//switch (op) {
 			// Operations / Instructions
 
 			// MOV
@@ -148,6 +149,8 @@ int eval () {
 			// LI : Load Integer to ax addr
 			// SC : Save Char from ax addr to Stack Top addr
 			// SI : Save Integer from ax addr to Stack Top addr
+			
+			/*
 			case IMM :
 				ax = *pc++;			//load immediate value to ax
 				break;
@@ -158,33 +161,56 @@ int eval () {
 				ax = *(int *)ax;		//load int to ax addr;
 				break;
 			case SC :
-				*(char *)*sp++ = ax;		//save char to stack top addr
+				ax = *(char *)*sp++ = ax;	//save char to stack top addr
 				break;
 			case SI :
 				*(int *)*sp++ = ax;		//save int to stack top addr
 				break;
 			
-				// PUSH
+			*/
+			
+			if 	(op == IMM)	{ ax = *pc++; }
+			else if (op == LC)	{ ax = *(char *)ax; }
+			else if (op == LI)	{ ax = *(int *)ax; }
+			else if (op == SC)	{ ax = *(char *)*sp++ = ax; }
+			else if (op == SI)	{ *(int *)*sp++ = ax; }
+
+
+			// PUSH
 			// PUSH : push the value of ax to the stack
+			
+			/*
 			case PUSH :
 				*--sp = ax;
 				break;
+			*/
+			else if (op == PUSH)	{ *--sp = ax; }
+
 			// JMP
 			// JMP <addr> : set program counter to the new <addr>
+			
+			/*
 			case JMP :
 				pc = (int *)*pc;		//pc is storing the next command, which is the new <addr> we want to JMP to.
 				break;
-
+			*/
+			else if (op == JMP)	{ pc = (int *)*pc; }
+			
 			// JZ / JNZ
 			// if statement is implement using JZ and JNZ (jump when is zero, jump when is not zero)
 			// JZ : jump when ax is zero
 			// JNZ : jump when ax is not zero
+			 
+			/*
 			case JZ :
 				pc = ax ? pc + 1 : (int *)*pc;
 				break;
 			case JNZ :
 				pc = ax ? (int *)*pc : pc + 1;
 				break;
+			*/
+			else if (op == JZ)	{ pc = ax ? pc + 1 : (int *)*pc; }
+			else if (op == JNZ)	{ pc = ax ? (int *)*pc : pc + 1; }
 
 			// Subroutine
 			// CALL <addr> : call subroutine at <addr>. Note this is different from JMP since we need to store the current pc for future coming back to.
@@ -213,6 +239,7 @@ int eval () {
 			// +---------------+
 			// |    ....       |  low address
 			
+			/*
 			case CALL :
 				*--sp = (int)(pc + 1);
 				pc = (int *)*pc;
@@ -237,9 +264,18 @@ int eval () {
 			case LEA :
 				ax = (int)(bp + *pc++);
 				break;
+			*/
+			
+			else if (op == CALL)	{ *--sp = (int)(pc + 1); pc = (int *)*pc; }
+			else if (op == ENT)	{ *--sp = (int)bp; bp = sp; sp = sp - *pc++; }
+			else if (op == ADJ)	{ sp = sp + *pc++; }
+			else if (op == LEV)	{ sp = bp; bp = (int *)*sp++; pc = (int *)*sp++; }
+			else if (op == LEA)	{ ax = (int)(bp + *pc++); }
 
 			// Operator Instructions
 			// These are built-in basic operations. 
+			
+			/*
 			case OR : 	ax = *sp++ | ax; 	break;
 			case XOR : 	ax = *sp++ ^ ax; 	break;
 			case AND : 	ax = *sp++ & ax; 	break;
@@ -255,11 +291,31 @@ int eval () {
 			case SUB :	ax = *sp++ - ax;	break;
 			case MUL :	ax = *sp++ * ax;	break;
 			case DIV :	ax = *sp++ / ax;	break;
-			case MOD :	ax = *sp++ % ax;	break;				
+			case MOD :	ax = *sp++ % ax;	break;	
+			*/
+
+			else if (op == OR)	{ ax = *sp++ | ax; }
+			else if (op == XOR)	{ ax = *sp++ ^ ax; }
+			else if (op == AND)	{ ax = *sp++ & ax; }
+			else if (op == EQ)	{ ax = *sp++ == ax; }
+			else if (op == NE)	{ ax = *sp++ != ax; }
+			else if (op == LT)	{ ax = *sp++ < ax; }
+			else if (op == LE)	{ ax = *sp++ <= ax; }
+			else if (op == GT)	{ ax = *sp++ > ax; }
+			else if (op == GE)	{ ax = *sp++ >= ax; }
+			else if (op == SHL)	{ ax = *sp++ << ax; }
+			else if (op == SHR)	{ ax = *sp++ >> ax; }
+			else if (op == ADD)	{ ax = *sp++ + ax; }
+			else if (op == SUB)	{ ax = *sp++ - ax; }
+			else if (op == MUL)	{ ax = *sp++ * ax; }
+			else if (op == DIV) 	{ ax = *sp++ / ax; }
+			else if (op == MOD)	{ ax = *sp++ % ax; }
 			
 			// System Commands
 			// These commands including open and closing files, IO from console, memory allocation and etc.
 			// These commands requires extensive knowledge to implement, such that we will simply use built-in functions provided.
+			
+			/*
 			case EXIT :
 				printf("EXIT : %d\n", *sp);
 				return *sp;
@@ -286,14 +342,31 @@ int eval () {
 			case MCMP :
 				ax = memcmp( (char *)sp[2], (char *)sp[1], *sp);
 				break;
+			*/
+			
+			else if (op == EXIT)	{ printf("EXIT : %d\n", *sp); return *sp; }
+			else if (op == OPEN)	{ ax = open( (char *)sp[1], sp[0]); }
+			
+			else if (op == CLOS)	{ ax = close(*sp); }
+			else if (op == READ) 	{ ax = read(sp[2], (char *)sp[1], *sp); }
+			else if (op == PRTF)	{ tmp = sp + pc[1]; ax = printf( (char *)tmp[-1], tmp[-2], tmp[-3], tmp[-4], tmp[-5], tmp[-6]); }
+			else if (op == MALC)	{ ax = (int)malloc(*sp); }
+			else if (op == MSET) 	{ ax = (int)memset( (char *)sp[2], sp[1], *sp); }
+			else if (op == MCMP) 	{ ax = memcmp( (char *)sp[2], (char *)sp[1], *sp); }
 			
 			// ERROR fallback
 			// If op doesn't belong to any of the above instructions, there must be something wrong, therefore we exit the VM.
+			
+			/*
 			default :
 				printf("ERROR : unknown instruction %d\n", op);
 				return -1;
 				break;
-		}
+			*/
+			else {
+				printf("ERROR : unknown instruction %d\n", op);
+				return -1;
+			}
 	}
 	return 0;
 }
