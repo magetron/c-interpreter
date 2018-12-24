@@ -23,11 +23,18 @@ enum {
 
 // Tokens and classes supported (last operator has the highest precedence)
 // (e.g. = -> Assign, == -> Eq, != -> Ne)
+// Most of the tokens are understandable, some of them that are not so intuitive are pointed out below :
+// Glo -> Global Variable
+// Fun -> Function
+// Lan / Lor -> && / ||
+// Brak -> Bracket
+
 enum {
 	Num = 128, Fun, Sys, Glo, Loc, Id,
 	Char, Else, Enum, If, Int, Return, Sizeof, While,
 	Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
 };
+
 
 // Identifier
 // It's basically a list of keywords / stuff we have at the moment, each of them is called an identifier for a variable / a keyword / a number.
@@ -64,6 +71,133 @@ int *idmain;
 
 // types of variable / function supported
 enum { CHAR, INT, PTR };
+
+int basetype, expr_type;	// basetype : type of declartion of variable / function / type
+				// Note : for type declaration, only enum is supported in pcc
+				// expr_type : type of an expression
+
+void match ();
+// match is a wrapper for next() with token exception quits. It is written after void next()
+
+void next ();
+// next is our lexical analyser
+
+void eval ();
+// eval is the VM we are using for pcc interpreter
+
+void enum_declaration () {
+	// parse enum [id] { a = 1, b = 2, c = 3 ... }
+	int i;
+	i = 0;
+	while (token != '}') {
+		if (token != Id) {
+			printf("ERROR : invalid enum identifier %d at line %d\n", token, line);
+			exit(-1);
+		}
+		next();
+		if (token == Assign) {
+			// enum [id] { a = 1 }
+			next();
+			if (token != Num) {
+				printf("ERROR : invalid enum initialiser at line %d\n", line);
+				exit(-1);
+			}
+			i = token_val;
+			next();
+		}
+
+		current_id[Class] = Num;
+		current_id[Type] = INT;
+		current_id[Value] = i++;
+
+		if (token == ',') next();
+	}
+}
+
+void function_declaration () {
+	return;
+}
+
+void global_declaration () {
+	// global_declaration ::= enum_decl | variable_decl | function_decl
+	//
+	// enum_decl ::= 'enum' [id] '{' id ['=' 'num'] {',' id ['=' 'num'} '}'
+	//
+	// variable_decl ::= type {'*'} id { ',' {'*'} id } ';'
+	//
+	// function_decl ::= type {'*'} id '(' parameter_decl ')' '{' body_decl '}'
+	int type, i;
+
+	basetype = INT;
+	
+	// if (token == SYMBOL) is a look before piece that checks which type it is.
+	// e.g. if token is enum pcc knows it is a enumarator, if token is int, then we dont't know if it is a function or a varibale, then we need to take a look at a lookahead piece, if the lookahead piece gives us (, then it must be a function, otherwise its a varibale.
+
+	// enum
+	if (token == Enum) {
+		// enum [id] { a = 10, b = 20, c = 30 ... }
+		match(Enum);
+		if (token != '{') match(Id);
+		if (token == '{') {
+			match('{');
+			enum_declaration();
+			match('}');
+		}
+		
+		match(';');
+		return;
+	}
+
+	// type information
+	if (token == Int) match(Int);
+	else if (token == Char) {
+		match(Char);
+		basetype = CHAR;
+	}
+	
+	// variable declaration
+	while ( (token != ';') && (token != '}') ) {
+		type = basetype;
+		
+		// pointer that start with * 
+		// could be int *x, **x, ***x, ...
+		// for all pointers, there must be a base type, e.g int, then the more level there is, the more * there is
+		// pcc does this by adding PTR to type
+		while (token == Mul) {
+			match(Mul);
+			type = type + PTR; 
+		}
+		if (token != Id) {
+			// declaration is invalid
+			printf("ERROR : invalid global declaration on line %d\n", line);
+			exit(-1);
+		}
+		if (current_id[Class]) {
+			// identifier exsists in Symbol table
+			printf("ERROR : duplicate global declaration on line %d\n", line);
+			exit(-1);
+		}
+		
+		match(Id);
+		current_id[Type] = type;
+		
+		if (token == '(') {
+			// function
+			current_id[Class] = Fun;
+			current_id[Value] = (int)(text + 1); // Value stores the memory address of the function
+			function_declaration();
+		} else {
+			// variable
+			current_id[Class] = Glo; 
+			current_id[Value] = (int)data;
+			data = data + sizeof(int);
+		}
+
+		if (token == ',') match(',');
+	}
+	
+	next();
+}
 
 
 // Lexical Analyser
@@ -298,15 +432,24 @@ void next () {
 	return;
 }
 
+void match(int tk) {
+	if (token == tk) next();
+	else {
+		printf("ERROR : expected token %d at line %d\n", tk, line);
+		exit(-1);
+	}
+}
+
+
 void expression (int level) {
 	
 }
 
 void program () {
+	// get next token
 	next();
 	while (token > 0) {
-		printf("token = %c\n", token);
-		next();
+		global_declaration();
 	}
 }
 
