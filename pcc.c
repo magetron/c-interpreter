@@ -78,295 +78,6 @@ int basetype, expr_type;	// basetype : type of declartion of variable / function
 
 int index_of_bp;		// index of base pointer on the stack
 
-void match ();
-// match is a wrapper for next() with token exception quits. It is written after void next()
-
-void next ();
-// next is our lexical analyser
-
-int eval ();
-// eval is the VM we are using for pcc interpreter
-
-void enum_declaration () {
-	// parse enum [id] { a = 1, b = 2, c = 3 ... }
-	int i;
-	i = 0;
-	while (token != '}') {
-		if (token != Id) {
-			printf("ERROR : invalid enum identifier %d at line %d\n", token, line);
-			exit(-1);
-		}
-		next();
-		if (token == Assign) {
-			// enum [id] { a = 1 }
-			next();
-			if (token != Num) {
-				printf("ERROR : invalid enum initialiser at line %d\n", line);
-				exit(-1);
-			}
-			i = token_val;
-			next();
-		}
-
-		current_id[Class] = Num;
-		current_id[Type] = INT;
-		current_id[Value] = i++;
-
-		if (token == ',') next();
-	}
-}
-
-void function_parameter () {
-	int type;
-	int params;
-	params = 0;
-	while (token != ')') {
-		// type of parameters
-		
-		type = INT;
-		if (token == Int) match(Int);
-		else if (token == Char) {
-			type = CHAR;
-			match(Char);
-		}
-
-		// pointer
-		while (token == Mul) {
-			match(Mul);
-			type = type + PTR;
-		}
-
-		// parameter name
-		if (token != Id) {
-			printf("ERROR : invalid parameter declartion at line %d\n", line);
-			exit(-1);
-		}
-		if (current_id[Class] == Loc) {
-			printf("ERROR : duplicate parameter declaration at line %d\n", line);
-			exit(-1);
-		}
-
-		match(Id);
-
-		// Store global variable elsewhere, could be optimised if we check what global variable are duplicates and store them accordingly
-		current_id[BClass] = current_id[Class]; 
-		current_id[Class] = Loc;
-		current_id[BType] = current_id[Type];
-		current_id[Type] = type;
-		current_id[BValue] = current_id[Value];
-		current_id[Value] = params++;
-
-		if (token == ',') match(',');
-	}
-	
-	// This is used for VM to indicate the new BP below in void function_declaration();
-	index_of_bp = params + 1;
-}
-
-void function_body () {
-	// In pcc, all declarations in a function shall be in front of all expressions
-	// type func_name (...) {
-	// 	1. local declaration	
-	// 	2. statements
-	// }
-	
-	int pos_local; 		// position of local variables on the stack
-	int type;
-
-	pos_local = index_of_bp;
-
-	while ( (token == Int || token == Char) ) {
-		// declare local variables
-		basetype = (token == Int) ? INT : CHAR;
-		match(token);
-
-		while (token != ';') {
-			type = basetype;
-			while (token == Mul) {
-				match(Mul);
-				type = type + PTR;
-			}
-			if (token != Id) {
-				// invalid declaration
-				printf("ERROR : invalid local declaration at line %d\n", line);
-				exit(-1);
-			}
-			if (current_id[Class] == Loc) {
-				// duplicate declaration
-				printf("ERROR : duplicate local declaration at line %d\n", line);
-				exit(-1);
-			}
-			
-			match(Id);
-			
-			// store local variables
-			current_id[BClass] = current_id[Class];
-			current_id[Class] = Loc;
-			current_id[BType] = current_id[Type];
-			current_id[Type] = type;
-			current_id[BValue] = current_id[Value];
-			current_id[Value] = ++pos_local;
-			
-			if (token == ',') match(',');
-		}
-
-		match(';');
-	}
-
-	*++text = ENT;
-	*++text = pos_local - index_of_bp;
-
-	while (token != '}') statement();
-
-	*++text = LEV;
-}
-
-
-
-
-void function_declaration () {
-	// |    ....       | 	high address
-	// +---------------+
-	// | arg: param_a  |    new_bp + 3
-	// +---------------+
-	// | arg: param_b  |    new_bp + 2
-	// +---------------+
-	// |return address |    new_bp + 1
-	// +---------------+
-	// | old BP        | <- new BP
-	// +---------------+
-	// | local_1       |    new_bp - 1
-	// +---------------+
-	// | local_2       |    new_bp - 2
-	// +---------------+
-	// |    ....       |  	low address
-	//
-	// In a function, the VM access the variable via new_bp pointer and the offset of a variable,
-	// therefore, it is important for us to know the number of arguments as well as the offset for each argument.
-	//
-	// variable_decl ::= type {'*'} id { ',' {'*'} id } ';'
-	// 
-	// function_decl ::= type {'*'} id '(' parameter_decl ')' '{' body_decl '}'
-	// 
-	// parameter_decl ::= type {'*'} id {',' type {'*'} id}
-	// 
-	// body_decl ::= {variable_decl}, {statement}
-	// 
-	// statement ::= non_empty_statement | empty_statement
-	// 
-	// non_empty_statement ::= if_statement | while_statement | '{' statement '}'
-	//                      | 'return' expression | expression ';'
-	// 
-	// if_statement ::= 'if' '(' expression ')' statement ['else' non_empty_statement]
-	// 
-	// while_statement ::= 'while' '(' expression ')' non_empty_statement
-	
-	match('(');
-	function_parameter();
-	match(')');
-	
-	match('{');
-	function_body();
-	// match('}'); 
-	// Note : Intuitively, we need to match the right bracket } indicating the end of a function. 
-	// However, if we consume that character here, the outer while loop going through the whole source code would not be able to know that the function has ended. 
-	// Therefore, we leave the consumption of character } to the outer loop.
-	
-	current_id = symbols;
-	while (current_id[Token]) {
-		if (current_id[Class] == Loc) {
-			// restore the information of global variables that are covered in 
-			current_id[Class] = current_id[BClass];
-			current_id[Type] = current_id[BType];
-			current_id[Value] = current_id[BValue];
-		}
-		current_id = current_id + IdSize;
-	}
-
-}
-
-void global_declaration () {
-	// global_declaration ::= enum_decl | variable_decl | function_decl
-	//
-	// enum_decl ::= 'enum' [id] '{' id ['=' 'num'] {',' id ['=' 'num'} '}'
-	//
-	// variable_decl ::= type {'*'} id { ',' {'*'} id } ';'
-	//
-	// function_decl ::= type {'*'} id '(' parameter_decl ')' '{' body_decl '}'
-	int type, i;
-
-	basetype = INT;
-	
-	// if (token == SYMBOL) is a look before piece that checks which type it is.
-	// e.g. if token is enum pcc knows it is a enumarator, if token is int, then we dont't know if it is a function or a varibale, then we need to take a look at a lookahead piece, if the lookahead piece gives us (, then it must be a function, otherwise its a varibale.
-
-	// enum
-	if (token == Enum) {
-		// enum [id] { a = 10, b = 20, c = 30 ... }
-		match(Enum);
-		if (token != '{') match(Id);
-		if (token == '{') {
-			match('{');
-			enum_declaration();
-			match('}');
-		}
-		
-		match(';');
-		return;
-	}
-
-	// type information
-	if (token == Int) match(Int);
-	else if (token == Char) {
-		match(Char);
-		basetype = CHAR;
-	}
-	
-	// variable declaration
-	while ( (token != ';') && (token != '}') ) {
-		type = basetype;
-		
-		// pointer that start with * 
-		// could be int *x, **x, ***x, ...
-		// for all pointers, there must be a base type, e.g int, then the more level there is, the more * there is
-		// pcc does this by adding PTR to type
-		while (token == Mul) {
-			match(Mul);
-			type = type + PTR; 
-		}
-		if (token != Id) {
-			// declaration is invalid
-			printf("ERROR : invalid global declaration on line %d\n", line);
-			exit(-1);
-		}
-		if (current_id[Class]) {
-			// identifier exsists in Symbol table
-			printf("ERROR : duplicate global declaration on line %d\n", line);
-			exit(-1);
-		}
-		
-		match(Id);
-		current_id[Type] = type;
-		
-		if (token == '(') {
-			// function
-			current_id[Class] = Fun;
-			current_id[Value] = (int)(text + 1); // Value stores the memory address of the function
-			function_declaration();
-		} else {
-			// variable
-			current_id[Class] = Glo; 
-			current_id[Value] = (int)data;
-			data = data + sizeof(int);
-		}
-
-		if (token == ',') match(',');
-	}
-	
-	next();
-}
-
-
 // Lexical Analyser
 void next () {
 	char *last_pos;
@@ -610,7 +321,380 @@ void match(int tk) {
 
 
 void expression (int level) {
+
+}
+
+void statement () {
+	// there are 6 kinds of statements here:
+	// 1. if (...) <statement> [else <statement>]
+	// 2. while (...) <statement>
+	// 3. { <statement> }
+	// 4. return xxx;
+	// 5. <empty statement>;
+	// 6. expression; (expression end with semicolon)
 	
+	int *a, *b;
+
+	if (token == If) {
+
+		// if (...) <statement> [else <statement>]
+		//
+		//   if (...)           <cond>
+		//                      JZ a
+		//     <statement>      <statement>
+		//   else:              JMP b
+		// a:                 a:
+		//     <statement>      <statement>
+		// b:                 b:
+
+		match(If);
+		match('(');
+		expression(Assign); // parse condition
+		match(')');
+
+		*++text = JZ;
+		b = ++text;
+		
+		statement();
+		if (token == Else) {
+			match(Else);
+
+			*b = (int)(text + 3);
+			*++text = JMP;
+			b = ++text;
+
+			statement();
+		}
+
+		*b = (int)(text + 1);
+	} else if (token == While) {   
+
+	        // a:                     a:
+		//    while (<cond>)        <cond>
+		//                          JZ b
+		//     <statement>          <statement>
+		//                          JMP a
+		// b:                     b:
+		
+		match(While);
+		a = text + 1;
+
+		match('(');
+		expression(Assign);
+		match(')');
+
+		*++text = JZ;
+		b = ++text;
+
+		statement();
+
+		*++text = JMP;
+		*++text = (int)a;
+		*b = (int)(text + 1);
+	} else if (token == '{') {
+		
+		// { <statement> ... }
+		
+		match('{');
+
+		while (token != '}') statement();
+
+		match('}');
+	} else if (token == Return) {
+		
+		// return [expression]
+		
+		match(Return);
+
+		if (token != ';') expression(Assign);
+
+		match(';');
+
+		*++text = LEV;
+	} else if (token == ';') match(';');
+	else {
+		// a = b; or function_call();
+		expression(Assign);
+		match(';');
+	}
+}
+
+
+void enum_declaration () {
+	// parse enum [id] { a = 1, b = 2, c = 3 ... }
+	int i;
+	i = 0;
+	while (token != '}') {
+		if (token != Id) {
+			printf("ERROR : invalid enum identifier %d at line %d\n", token, line);
+			exit(-1);
+		}
+		next();
+		if (token == Assign) {
+			// enum [id] { a = 1 }
+			next();
+			if (token != Num) {
+				printf("ERROR : invalid enum initialiser at line %d\n", line);
+				exit(-1);
+			}
+			i = token_val;
+			next();
+		}
+
+		current_id[Class] = Num;
+		current_id[Type] = INT;
+		current_id[Value] = i++;
+
+		if (token == ',') next();
+	}
+}
+
+void function_parameter () {
+	int type;
+	int params;
+	params = 0;
+	while (token != ')') {
+		// type of parameters
+		
+		type = INT;
+		if (token == Int) match(Int);
+		else if (token == Char) {
+			type = CHAR;
+			match(Char);
+		}
+
+		// pointer
+		while (token == Mul) {
+			match(Mul);
+			type = type + PTR;
+		}
+
+		// parameter name
+		if (token != Id) {
+			printf("ERROR : invalid parameter declartion at line %d\n", line);
+			exit(-1);
+		}
+		if (current_id[Class] == Loc) {
+			printf("ERROR : duplicate parameter declaration at line %d\n", line);
+			exit(-1);
+		}
+
+		match(Id);
+
+		// Store global variable elsewhere, could be optimised if we check what global variable are duplicates and store them accordingly
+		current_id[BClass] = current_id[Class]; 
+		current_id[Class] = Loc;
+		current_id[BType] = current_id[Type];
+		current_id[Type] = type;
+		current_id[BValue] = current_id[Value];
+		current_id[Value] = params++;
+
+		if (token == ',') match(',');
+	}
+	
+	// This is used for VM to indicate the new BP below in void function_declaration();
+	index_of_bp = params + 1;
+}
+
+void function_body () {
+	// In pcc, all declarations in a function shall be in front of all expressions
+	// type func_name (...) {
+	// 	1. local declaration	
+	// 	2. statements
+	// }
+	
+	int pos_local; 		// position of local variables on the stack
+	int type;
+
+	pos_local = index_of_bp;
+
+	while ( (token == Int || token == Char) ) {
+		// declare local variables
+		basetype = (token == Int) ? INT : CHAR;
+		match(token);
+
+		while (token != ';') {
+			type = basetype;
+			while (token == Mul) {
+				match(Mul);
+				type = type + PTR;
+			}
+			if (token != Id) {
+				// invalid declaration
+				printf("ERROR : invalid local declaration at line %d\n", line);
+				exit(-1);
+			}
+			if (current_id[Class] == Loc) {
+				// duplicate declaration
+				printf("ERROR : duplicate local declaration at line %d\n", line);
+				exit(-1);
+			}
+			
+			match(Id);
+			
+			// store local variables
+			current_id[BClass] = current_id[Class];
+			current_id[Class] = Loc;
+			current_id[BType] = current_id[Type];
+			current_id[Type] = type;
+			current_id[BValue] = current_id[Value];
+			current_id[Value] = ++pos_local;
+			
+			if (token == ',') match(',');
+		}
+
+		match(';');
+	}
+
+	*++text = ENT;
+	*++text = pos_local - index_of_bp;
+
+	while (token != '}') statement();
+
+	*++text = LEV;
+}
+
+
+void function_declaration () {
+	// |    ....       | 	high address
+	// +---------------+
+	// | arg: param_a  |    new_bp + 3
+	// +---------------+
+	// | arg: param_b  |    new_bp + 2
+	// +---------------+
+	// |return address |    new_bp + 1
+	// +---------------+
+	// | old BP        | <- new BP
+	// +---------------+
+	// | local_1       |    new_bp - 1
+	// +---------------+
+	// | local_2       |    new_bp - 2
+	// +---------------+
+	// |    ....       |  	low address
+	//
+	// In a function, the VM access the variable via new_bp pointer and the offset of a variable,
+	// therefore, it is important for us to know the number of arguments as well as the offset for each argument.
+	//
+	// variable_decl ::= type {'*'} id { ',' {'*'} id } ';'
+	// 
+	// function_decl ::= type {'*'} id '(' parameter_decl ')' '{' body_decl '}'
+	// 
+	// parameter_decl ::= type {'*'} id {',' type {'*'} id}
+	// 
+	// body_decl ::= {variable_decl}, {statement}
+	// 
+	// statement ::= non_empty_statement | empty_statement
+	// 
+	// non_empty_statement ::= if_statement | while_statement | '{' statement '}'
+	//                      | 'return' expression | expression ';'
+	// 
+	// if_statement ::= 'if' '(' expression ')' statement ['else' non_empty_statement]
+	// 
+	// while_statement ::= 'while' '(' expression ')' non_empty_statement
+	
+	match('(');
+	function_parameter();
+	match(')');
+	
+	match('{');
+	function_body();
+	// match('}'); 
+	// Note : Intuitively, we need to match the right bracket } indicating the end of a function. 
+	// However, if we consume that character here, the outer while loop going through the whole source code would not be able to know that the function has ended. 
+	// Therefore, we leave the consumption of character } to the outer loop.
+	
+	current_id = symbols;
+	while (current_id[Token]) {
+		if (current_id[Class] == Loc) {
+			// restore the information of global variables that are covered in 
+			current_id[Class] = current_id[BClass];
+			current_id[Type] = current_id[BType];
+			current_id[Value] = current_id[BValue];
+		}
+		current_id = current_id + IdSize;
+	}
+
+}
+
+void global_declaration () {
+	// global_declaration ::= enum_decl | variable_decl | function_decl
+	//
+	// enum_decl ::= 'enum' [id] '{' id ['=' 'num'] {',' id ['=' 'num'} '}'
+	//
+	// variable_decl ::= type {'*'} id { ',' {'*'} id } ';'
+	//
+	// function_decl ::= type {'*'} id '(' parameter_decl ')' '{' body_decl '}'
+	int type, i;
+
+	basetype = INT;
+	
+	// if (token == SYMBOL) is a look before piece that checks which type it is.
+	// e.g. if token is enum pcc knows it is a enumarator, if token is int, then we dont't know if it is a function or a varibale, then we need to take a look at a lookahead piece, if the lookahead piece gives us (, then it must be a function, otherwise its a varibale.
+
+	// enum
+	if (token == Enum) {
+		// enum [id] { a = 10, b = 20, c = 30 ... }
+		match(Enum);
+		if (token != '{') match(Id);
+		if (token == '{') {
+			match('{');
+			enum_declaration();
+			match('}');
+		}
+		
+		match(';');
+		return;
+	}
+
+	// type information
+	if (token == Int) match(Int);
+	else if (token == Char) {
+		match(Char);
+		basetype = CHAR;
+	}
+	
+	// variable declaration
+	while ( (token != ';') && (token != '}') ) {
+		type = basetype;
+		
+		// pointer that start with * 
+		// could be int *x, **x, ***x, ...
+		// for all pointers, there must be a base type, e.g int, then the more level there is, the more * there is
+		// pcc does this by adding PTR to type
+		while (token == Mul) {
+			match(Mul);
+			type = type + PTR; 
+		}
+		if (token != Id) {
+			// declaration is invalid
+			printf("ERROR : invalid global declaration on line %d\n", line);
+			exit(-1);
+		}
+		if (current_id[Class]) {
+			// identifier exsists in Symbol table
+			printf("ERROR : duplicate global declaration on line %d\n", line);
+			exit(-1);
+		}
+		
+		match(Id);
+		current_id[Type] = type;
+		
+		if (token == '(') {
+			// function
+			current_id[Class] = Fun;
+			current_id[Value] = (int)(text + 1); // Value stores the memory address of the function
+			function_declaration();
+		} else {
+			// variable
+			current_id[Class] = Glo; 
+			current_id[Value] = (int)data;
+			data = data + sizeof(int);
+		}
+
+		if (token == ',') match(',');
+	}
+	
+	next();
 }
 
 void program () {
@@ -870,6 +954,7 @@ int eval () {
 
 int main (int argc, char **argv) {
 	int i, fd;
+	int *tmp;
 
 	argc--;
 	argv++;
@@ -936,11 +1021,17 @@ int main (int argc, char **argv) {
 		return -1;
 	}
 	
+	if ( !(symbols = malloc(poolsize)) ) {
+		printf("ERROR : could not malloc size of %d for symbol table\n", poolsize);
+		return -1;
+	}
+
 	// init value for VM
 	memset(text, 0, poolsize);
 	memset(data, 0, poolsize);
 	memset(stack, 0, poolsize);
-	
+	memset(symbols, 0, poolsize);
+
 	bp = sp = (int *)( (int)stack + poolsize );
 	ax = 0;
 	
@@ -969,5 +1060,19 @@ int main (int argc, char **argv) {
 
 
 	program();
+
+	if ( !(pc = (int *)idmain[Value])) {
+		printf("ERROR : main function not defined\n");
+		return -1;
+	}
+
+	// setup stack
+	sp = (int *)((int)stack + poolsize);
+	*--sp = EXIT; // call exit if main returns
+	*--sp = PUSH; tmp = sp;
+	*--sp = argc;
+	*--sp = (int)argv;
+	*--sp = (int)tmp;
+
 	return eval();
 }
