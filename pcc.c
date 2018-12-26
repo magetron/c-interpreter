@@ -85,7 +85,7 @@ void next () {
 	char *last_pos;
 	int hash;
 	
-	while (token = *src) {
+	while ( (token = *src) ) {
 	// We have 2 options when encourted unknown char
 	// 1. Point out the ERROR and Quit the whole interpreter
 	// 2. Point out the ERROR and Go on
@@ -402,7 +402,7 @@ void expression (int level) {
 		match('"');
 		while (token == '"') match('"');
 
-		data = (char *)( (int)data + sizeof(int)) & (-sizeof(int)) );
+		data = (char *)( ( (int)data + sizeof(int) ) & ( -sizeof(int) ) );
 
 		expr_type = PTR;
 
@@ -465,10 +465,10 @@ void expression (int level) {
 				*++text = id[Value];
 			else if (id[Class] == Fun) {
 				// Normal Functions
-				*++text == CALL;
-				*++text == id[Value];
+				*++text = CALL;
+				*++text = id[Value];
 			} else {
-				printf("ERROR : bad function call at line %d\n", line);
+				printf("ERROR : invalid function call at line %d\n", line);
 				exit(-1);
 			}
 
@@ -484,7 +484,7 @@ void expression (int level) {
 			*++text = id[Value];
 			expr_type = INT;
 		} else {
-			if (id[class] == Loc) {
+			if (id[Class] == Loc) {
 				*++text = LEA;
 				*++text = index_of_bp - id[Value];
 			} else if (id[Class] == Glo) {
@@ -525,7 +525,7 @@ void expression (int level) {
 
 		if (expr_type >= PTR) expr_type = expr_type - PTR;
 		else {
-			printf("ERROR : bad dereference at line %d\n", line);
+			printf("ERROR : invalid dereference at line %d\n", line);
 			exit(-1);
 		}
 
@@ -535,7 +535,7 @@ void expression (int level) {
 		expression(Inc);
 		if ( (*text == LC) || (*text == LI) ) text--;
 		else {
-			printf("ERROR : bad address at line %d\n", line);
+			printf("ERROR : invalid address at line %d\n", line);
 			exit(-1);
 		}
 
@@ -609,7 +609,7 @@ void expression (int level) {
 			*text = PUSH;
 			*++text = LI;
 		} else {
-			printf("ERROR : bad value for pre-increment at line %d\n", line);
+			printf("ERROR : invalid value for pre-increment at line %d\n", line);
 			exit(-1);
 		}
 
@@ -622,20 +622,257 @@ void expression (int level) {
 		*++text = (expr_type == CHAR) ? SC : SI;
 
 	} else {
-		printf("ERROR : bad expression at line %d\n", line);
+		printf("ERROR : invalid expression at line %d\n", line);
 		exit(-1);
 	}
 
+	// binary operators and postfix operators
+	while (token >= level) {
+		// handle operators according to their precedence
+		tmp = expr_type;
+		if 		(token == Assign) {
+			// a = b;
+			match(Assign);
+
+			if ( (*text == LC) || (*text == LI) ) *text = PUSH;
+			else {
+				printf("ERROR : invalid value at assignment at line %d\n", line);
+				exit(-1);
+			}
+
+			expression(Assign);
+			
+			expr_type = tmp;
+			*++text = (expr_type == CHAR) ? SC : SI;
+		
+		} else if 	(token == Cond) {
+			// a = <statement> ? b : c
+			match(Cond);
+			*++text = JZ;
+			addr = ++text;
+			expression(Assign);
+
+			if (token == ':') match(':'); else {
+				printf("ERROR : missing : in conditional statement at line %d\n", line);
+				exit(-1);
+			}
+
+			*addr = (int)(text + 3);
+			*++text = JMP;
+			addr = ++text;
+			expression(Cond);
+			*addr = (int)(text + 1);
 
 
 
+		} else if 	(token == Lor) {
+			// a || b		  a && b
+			//
+			// <expr1> || <expr2>     <expr1> && <expr2>
+			//
+			//  ...<expr1>...          ...<expr1>...
+			//  JNZ b                  JZ b
+			//  ...<expr2>...          ...<expr2>...
+			// b:                     b:
+			
+			match(Lor);
+			*++text = JNZ;
+			addr = ++text;
+			expression(Lan);
+			
+			*addr = (int)(text + 1);
+			expr_type = INT;
 
+		} else if 	(token == Lan) {
+			// a && b
+			
+			match(Lan);
+			*++text = JZ;
+			addr = ++text;
+			expression(Or);
+			*addr = (int)(text + 1);
+			expr_type = INT;
 
-				
+		} else if 	(token == Or) {
+			match(Or);
+			*++text = PUSH;
+			expression(Xor);
+			*++text = OR;
+			expr_type = INT;
+		} else if	(token == And) {
+			match(And);
+			*++text = PUSH;
+			expression(Eq);
+			*++text = AND;
+			expr_type = INT;
+		} else if 	(token == Xor) {
+			// <expr1> ^ <expr2>
+			//
+			// ...<expr1>...          <- now the result is on ax
+			// PUSH
+			// ...<expr2>...          <- now the value of <expr2> is on ax
+			// XOR
+			
+			match(Xor);
+			*++text = PUSH;
+			expression(And);
+			*++text = XOR;
+			
+			expr_type = INT;
 
+		} else if 	(token == Add) {
+			match(Add);
+			*++text = PUSH;
+			expression(Mul);
 
+			expr_type = tmp;
+			if (expr_type > PTR) {
+				*++text = PUSH;
+				*++text = IMM;
+				*++text = sizeof(int);
+				*++text = MUL;
+			}
+			*++text = ADD;
 
+		} else if 	(token == Sub) {
+			match(Sub);
+			*++text = PUSH;
+			expression(MUL);
 
+			if ( (tmp > PTR) && (tmp == expr_type) ) {
+				*++text = SUB;
+				*++text = PUSH;
+				*++text = IMM;
+				*++text = sizeof(int);
+				*++text = DIV;
+				expr_type = INT;
+			} else if (tmp > PTR) {
+				*++text = PUSH;
+				*++text = IMM;
+				*++text = sizeof(int);
+				*++text = MUL;
+				*++text = SUB;
+				expr_type = tmp;
+			} else {
+				*++text = SUB;
+				expr_type = tmp;
+			}
+		
+		} else if 	(token == Mul) {
+			match(Mul);
+			*++text = PUSH;
+			expression(Inc);
+			*++text = MUL;
+			expr_type = tmp;
+		} else if 	(token == Div) {
+			match(Div);
+			*++text = PUSH;
+			expression(Inc);
+			*++text = DIV;
+			expr_type = tmp;
+		} else if 	(token == Mod) {
+			match(Mod);
+			*++text = PUSH;
+			expression(Inc);
+			*++text = MOD;
+			expr_type = tmp;
+		} else if 	(token == Eq) {
+			match(Eq);
+			*++text = PUSH;
+			expression(Ne);
+			*++text = EQ;
+			expr_type = INT;
+		} else if	(token == Ne) {
+			match(Ne);
+			*++text = PUSH;
+			expression(Lt);
+			*++text = NE;
+			expr_type = INT;
+		} else if 	(token == Lt) {
+			match(Lt);
+			*++text = PUSH;
+			expression(Shl);
+			*++text = LT;
+			expr_type = INT;
+		} else if	(token == Gt) {
+			match(Gt);
+			*++text = PUSH;
+			expression(Shl);
+			*++text = GT;
+			expr_type = INT;
+		} else if 	(token == Le) {
+			match(Le);
+			*++text = PUSH;
+			expression(Shl);
+			*++text = LE;
+			expr_type = INT;
+		} else if 	(token == Ge) {
+			match(Ge);
+			*++text = PUSH;
+			expression(Shl);
+			*++text = GE;
+			expr_type = INT;
+		} else if 	(token == Shl) {
+			match(Shl);
+			*++text = PUSH;
+			expression(Add);
+			*++text = SHL;
+			expr_type = INT;
+		} else if	(token == Shr) {
+			match(Shr);
+			*++text = PUSH;
+			expression(Add);
+			*++text = SHR;
+			expr_type = INT;
+		} else if 	( (token == Inc) || (token == Dec) ) {
+			// postfix ++ / --
+			
+			if (*text == LC) {
+				*text = PUSH;
+				*++text = LC;
+			} else if (*text == LI) {
+				*text = PUSH;
+				*++text = LI;
+			} else {
+				printf("ERROR : invalid value in increment at line %d\n", line);
+				exit(-1);
+			}
+
+			*++text = PUSH;
+			*++text = IMM;
+			*++text = (expr_type > PTR) ? sizeof(int) : sizeof(char);
+			*++text = (token == Inc) ? ADD : SUB;
+			*++text = (expr_type == CHAR) ? SC : SI;
+			*++text = PUSH;
+			*++text = IMM;
+			*++text = (expr_type > PTR) ? sizeof(int) : sizeof(char);
+			*++text = (token == Inc) ? SUB : ADD;
+			match(token);
+		
+		} else if 	(token == Brak) {
+			match(Brak);
+			*++text = PUSH;
+			expression(Assign);
+			match(']');
+
+			if (tmp > PTR) {
+				*++text = PUSH;
+				*++text = IMM;
+				*++text = sizeof(int);
+				*++text = MUL;
+			} else if (tmp < PTR) {
+				printf("ERROR : pointer type array expected at line %d\n", line);
+				exit(-1);
+			}
+
+			expr_type = tmp - PTR;
+			*++text = ADD;
+			*++text = (expr_type == CHAR) ? LC : LI;
+		} else {
+			printf("ERROR : compile error, token %d unrecognised at line %d\n", token, line);
+			exit(-1);
+		}
+	}
 }
 
 void statement () {
