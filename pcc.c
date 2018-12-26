@@ -2,7 +2,9 @@
 #include "stdlib.h"
 #include "memory.h"
 #include "string.h"
-#define DEBUG 1
+
+int DEBUG;
+int ASM;
 
 int token; 			// current token
 char *src, *old_src;		// pointer to src string
@@ -83,14 +85,29 @@ void next () {
 	char *last_pos;
 	int hash;
 	
-	while ( (token = *src) ) {
+	while (token = *src) {
 	// We have 2 options when encourted unknown char
 	// 1. Point out the ERROR and Quit the whole interpreter
 	// 2. Point out the ERROR and Go on
 	// In pcc, we chose 2. The while loop skips unknown char as well as whitespaces.
 		*src++;
-		if 	(token == '\n') 	line++;
-		else if (token == '#')
+		if 	(token == '\n') {
+			if (ASM) {
+				// output compile information
+				printf("Line %d : %.*s", line, src-old_src, old_src);
+				old_src = src;
+
+				while (old_text < text) {
+					printf("%8.4s", & 	"LEA ,IMM ,JMP ,CALL,JZ  ,JNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PUSH,"
+                                      				"OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
+                                      				"OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT" [*++old_text * 5] );
+
+					if (*old_text <= ADJ) printf("%d\n", *++old_text);
+					else printf("\n");
+				}
+			}
+			line++;
+		} else if (token == '#')
 				// pcc does not support macros at this stage
 				while ( (*src != 0) && (*src !='\n') ) src++;
 
@@ -100,7 +117,7 @@ void next () {
 			// parse identifier
 			last_pos = src - 1;
 			hash = token;
-			while ( (*src >= 'a' && src <= 'z') || (*src >= 'A' && *src <= 'Z') || (*src >= '0' && *src <= '9') || (*src == '_')) {
+			while ( (*src >= 'a' && *src <= 'z') || (*src >= 'A' && *src <= 'Z') || (*src >= '0' && *src <= '9') || (*src == '_')) {
 				hash = hash * 147 + *src;
 				src++;
 			}
@@ -148,6 +165,9 @@ void next () {
 					// oct
 					while (*src >= '0' && *src <= '7') token_val = token_val * 8 + *src++ - '0';
 			}
+
+			token = Num;
+			return;
 		}
 		
 		// String
@@ -956,33 +976,38 @@ int main (int argc, char **argv) {
 	int i, fd;
 	int *tmp;
 
+	DEBUG = 0;
+	ASM = 0;
+
 	argc--;
 	argv++;
 
-	// default size && init
-	poolsize = 256 * 1024; 
-	line = 1;
+	if ( (argc > 0) && (**argv == '-') && ( (*argv)[1] == 's') ) {
+		ASM = 1;
+		--argc;
+		++argv;
+	}
+	
+	if ( (argc > 0) && (**argv == '-') && ( (*argv)[1] == 'd') ) {
+		DEBUG = 1;
+		--argc;
+		++argv;
+	}
+	
+	if (argc < 1) {
+		printf("USAGE : pcc [-s] [-d] file \n");
+		return -1;
+	}
 
-
-	// read file && deal with ERROR msgs
+	// open file && deal with ERROR msgs
 	if ( (fd = open(*argv, 0)) < 0 ) {
 		printf("ERROR : could not open file %s\n", *argv);
 		return -1;
 	}
 	
-	if ( !(src = old_src = malloc(poolsize)) ) {
-		printf("ERROR : could not malloc size of %d for source area\n", poolsize);
-		return -1;
-	}
-
-	if ( (i = read(fd, src, poolsize - 1)) <= 0) {
-		printf("ERROR : read src failed; return value %d\n", i);
-		return -1;
-	}
-	
-	// add EOF
-	src[i] = 0;
-	close(fd);
+	// default size && init
+	poolsize = 256 * 1024; 
+	line = 1;
 
 	// read file finished, ready to do some real stuff
 	// +------------------+
@@ -1003,7 +1028,6 @@ int main (int argc, char **argv) {
 	// +------------------+
 	//
 	// Note : currently pcc does not support uninitialised variables, such that there would be no bss segment.
-
 
 	// allocate memory for VM
 	if ( !(text = old_text = malloc(poolsize)) ) {
@@ -1032,10 +1056,8 @@ int main (int argc, char **argv) {
 	memset(stack, 0, poolsize);
 	memset(symbols, 0, poolsize);
 
-	bp = sp = (int *)( (int)stack + poolsize );
-	ax = 0;
+	old_text = text;
 	
-
 	src = "char else enum if int return sizeof while "
 	      "open read close printf malloc memset memcmp exit void main";
 
@@ -1057,7 +1079,21 @@ int main (int argc, char **argv) {
 
 	next(); current_id[Token] = Char; // if void, pcc handle it as null char
 	next(); idmain = current_id; // keep track of the main function
+	
+	if ( !(src = old_src = malloc(poolsize)) ) {
+		printf("ERROR : could not malloc size of %d for source area\n", poolsize);
+		return -1;
+	}
 
+	// read the source file
+	if ( (i = read(fd, src, poolsize - 1)) <= 0) {
+		printf("ERROR : read src failed; return value %d\n", i);
+		return -1;
+	}
+	
+	// add EOF
+	src[i] = 0;
+	close(fd);
 
 	program();
 
@@ -1067,7 +1103,7 @@ int main (int argc, char **argv) {
 	}
 
 	// setup stack
-	sp = (int *)((int)stack + poolsize);
+	sp = (int *)( (int)stack + poolsize );
 	*--sp = EXIT; // call exit if main returns
 	*--sp = PUSH; tmp = sp;
 	*--sp = argc;
