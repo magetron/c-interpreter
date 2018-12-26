@@ -10,6 +10,8 @@ It's called Patrick's C compiler -> pcc.
 
 * `hello.c` - A piece of testing C code that outputs `Hello World!\n`
 
+* `fibonacci.c` - A piece of testing C code that outputs fibonacci sequence using recursion.
+
 ## Usage
 
 `gcc -m32 pcc.c -o pcc`
