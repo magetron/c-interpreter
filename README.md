@@ -18,3 +18,17 @@ It's called Patrick's C compiler -> pcc.
 
 `./pcc hello.c`
 
+### Bootstrap
+
+pcc is a interepter that bootstraps. Therefore, feel free to execute commands like :
+
+`./pcc pcc.c fibonacci.c`
+
+Although it is not recommended since this slows down the program for no reason.
+
+### Options
+
+`./pcc -s` outputs ASM code for VM / Further compiler purposes.
+
+`./pcc -d` outputs DEBUG information.
+
