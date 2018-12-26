@@ -663,8 +663,6 @@ void expression (int level) {
 			expression(Cond);
 			*addr = (int)(text + 1);
 
-
-
 		} else if 	(token == Lor) {
 			// a || b		  a && b
 			//
@@ -737,7 +735,7 @@ void expression (int level) {
 		} else if 	(token == Sub) {
 			match(Sub);
 			*++text = PUSH;
-			expression(MUL);
+			expression(Mul);
 
 			if ( (tmp > PTR) && (tmp == expr_type) ) {
 				*++text = SUB;
