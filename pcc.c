@@ -341,6 +341,300 @@ void match(int tk) {
 
 
 void expression (int level) {
+	// We use Reverse Polish Notation RPN for determing the precedence of calculation
+	// For further information : Dijkstra's Shunting Yard Algorithm (https://blog.wudaiqi.com/2018/12/07/SPOJ-ONP-Transform-the-Expression/)
+	//
+	// Example :
+	// 3 + 4 * 2 / ( 1 - 5 ) ^ 2
+	//
+	// | Token | Action                  | Output                | Stack   | Notes                        |
+	// |-------|-------------------------|-----------------------|---------|------------------------------|
+	// | 3     | output                  | 3                     |         |                              |
+	// | +     | push to stack           | 3                     | +       |                              |
+	// | 4     | output                  | 3 4                   | +       |                              |
+	// | *     | push to stack and check | 3 4                   | * +     | * has higher precedence      |
+	// | 2     | output                  | 3 4 2                 | * +     |                              |
+	// | /     | pop from stack          | 3 4 2 *               | +       | / and * have same precedence |
+	// |       | push to stack           | 3 4 2 *               | / +     | / has higher precedence      |
+	// | (     | push to stack           | 3 4 2 *               | ( / +   |                              |
+	// | 1     | output                  | 3 4 2 * 1             | ( / +   |                              |
+	// | -     | push to stack           | 3 4 2 * 1             | - ( / + |                              |
+	// | 5     | output                  | 3 4 2 * 1 5           | - ( / + |                              |
+	// | )     | pop from stack until (  | 3 4 2 * 1 5 -         | ( / +   | ) right bracket found        |
+	// |       | pop (                   | 3 4 2 * 1 5 -         | / +     | ( is not needed anymore      |
+	// | ^     | push to stack           | 3 4 2 * 1 5 -         | ^ / +   |                              |
+	// | 2     | output                  | 3 4 2 * 1 5 - 2       | ^ / +   |                              |
+	// |       | pop until stack empty   | 3 4 2 * 1 5 - 2 ^ / + |         |                              |
+	//
+	// We deal with two types of expressions
+	// 1. unit_unary ::= unit | unit unary_op | unary_op unit
+	// 2. expr ::= unit_unary (bin_op unit_unary ...)
+	
+	int *id, *addr;
+	int tmp;
+	
+	// deal with unexpected token
+	if (!token) {
+		printf("ERROR : unexpected token at the end of expression at line %d\n", line);
+		exit(-1);
+	}
+
+	if 		(token == Num) {
+		match(Num);
+
+		*++text = IMM;
+		*++text = token_val;
+		expr_type = INT;
+
+	} else if 	(token == '"') {
+		// Note : pcc supports string in the following format
+		// char *p;
+		// p = 	"first line"
+		// 	"second line";
+		//
+		// It is equivalent to 
+		// char *p
+		// p = 	"first linesecond line";
+		
+		*++text = IMM;
+		*++text = token_val;
+
+		match('"');
+		while (token == '"') match('"');
+
+		data = (char *)( (int)data + sizeof(int)) & (-sizeof(int)) );
+
+		expr_type = PTR;
+
+	} else if	(token == Sizeof) {
+		// Note : sizeof is an unary operator
+		// pcc only supports sizeof(int), sizeof(char), sizeof(pointer)
+		
+		match(Sizeof);
+		match('(');
+		expr_type = INT;
+
+		if (token == Int) match(Int);
+		else if (token == Char) {
+			match(Char);
+			expr_type = CHAR;
+		}
+
+		while (token == Mul) {
+			match(Mul);
+			expr_type = expr_type + PTR;
+		}
+
+		match(')');
+
+		*++text = IMM;
+		*++text = (expr_type == CHAR) ? sizeof(char) : sizeof(int);
+
+		expr_type = INT;
+
+	} else if 	(token == Id) {
+		// Note : when token == Id, there could be 3 cases
+		// 1. function call
+		// 2. enum
+		// 3. variable
+		
+		match(Id);
+
+		id = current_id;
+
+		if (token == '(') {
+			// id ( ) <- is a function
+
+			match('(');
+
+			// arguments
+			
+			tmp = 0;
+			while (token != ')') {
+				expression(Assign);
+				*++text = PUSH;
+				tmp++;
+
+				if (token == ',') match(',');
+			}
+
+			match(')');
+
+			if (id[Class] == Sys) 
+				// System Functions
+				*++text = id[Value];
+			else if (id[Class] == Fun) {
+				// Normal Functions
+				*++text == CALL;
+				*++text == id[Value];
+			} else {
+				printf("ERROR : bad function call at line %d\n", line);
+				exit(-1);
+			}
+
+			if (tmp > 0) {
+				*++text = ADJ;
+				*++text = tmp;
+			}
+			expr_type = id[Type];
+
+		} else if (id[Class] == Num) {
+			// enum variable
+			*++text = IMM;
+			*++text = id[Value];
+			expr_type = INT;
+		} else {
+			if (id[class] == Loc) {
+				*++text = LEA;
+				*++text = index_of_bp - id[Value];
+			} else if (id[Class] == Glo) {
+				*++text = IMM;
+				*++text = id[Value];
+			} else {
+				printf("ERROR : undefined variable at line %d\n", line);
+				exit(-1);
+			}
+
+			expr_type = id[Type];
+			*++text = (expr_type == Char) ? LC : LI;
+		}
+
+	} else if 	(token == '(') {
+		match('(');
+
+		if ( (token == Int) || (token == Char) ) {
+			tmp = (token == Char) ? CHAR : INT;
+			match(token);
+			while (token == Mul) {
+				match(Mul);
+				tmp = tmp + PTR;
+			}
+			match(')');
+
+			expression(Inc);
+			expr_type = tmp;
+		} else {
+			expression(Assign);
+			match(')');
+		}
+
+	} else if 	(token == Mul) {
+		// *<addr> <- dereference
+		match(Mul);
+		expression(Inc); // same precedence as inc (++)
+
+		if (expr_type >= PTR) expr_type = expr_type - PTR;
+		else {
+			printf("ERROR : bad dereference at line %d\n", line);
+			exit(-1);
+		}
+
+		*++text = (expr_type == CHAR) ? LC : LI;
+	} else if 	(token == And) {
+		match(And);
+		expression(Inc);
+		if ( (*text == LC) || (*text == LI) ) text--;
+		else {
+			printf("ERROR : bad address at line %d\n", line);
+			exit(-1);
+		}
+
+		expr_type = expr_type + PTR;
+
+	} else if 	(token == '!') {
+		match('!');
+		expression(Inc);
+
+		*++text = PUSH;
+		*++text = IMM;
+		*++text = 0;
+		*++text = EQ;
+
+		expr_type = INT;
+
+	} else if 	(token == '~') {
+		match('~');
+		expression(Inc);
+
+		*++text = PUSH;
+		*++text = IMM;
+		*++text = -1;
+		*++text = XOR;
+
+		expr_type = INT;
+
+	} else if 	(token == Add) {
+		// +1 = 1 +n = n
+		// so, do nothing
+		match(Add);
+		expression(Inc);
+
+		expr_type = INT;
+
+	} else if 	(token == Sub) {
+		match(Sub);
+
+		if (token == Num) {
+	
+			*++text = IMM;
+			*++text = -token_val;
+			match(Num);
+
+		} else {
+
+			*++text = IMM;
+			*++text = -1;
+			*++text = PUSH;
+			expression(Inc);
+			*++text = MUL;
+
+		}
+
+		expr_type = INT;
+
+	} else if	( (token == Inc) || (token == Dec) ) {
+		// Note : the precedence of ++ / -- is important
+		// a++ returns a and a becomes a + 1
+		// ++a returns a becomes a + 1 and returns a
+		
+		tmp = token;
+		match(token);
+		expression(Inc);
+		
+		// when dealing with ++a, we use variable a twice, so we use PUSH first.
+		if (*text == LC) {
+			*text = PUSH;
+			*++text = LC;
+		} else if (*text == LI) {
+			*text = PUSH;
+			*++text = LI;
+		} else {
+			printf("ERROR : bad value for pre-increment at line %d\n", line);
+			exit(-1);
+		}
+
+		*++text = PUSH;
+		*++text = IMM;
+		
+		// pre-increment also works with pointers
+		*++text = (expr_type > PTR) ? sizeof(int) : sizeof(char);
+		*++text = (tmp == Inc) ? ADD : SUB;
+		*++text = (expr_type == CHAR) ? SC : SI;
+
+	} else {
+		printf("ERROR : bad expression at line %d\n", line);
+		exit(-1);
+	}
+
+
+
+
+
+
+				
+
+
+
 
 }
 
